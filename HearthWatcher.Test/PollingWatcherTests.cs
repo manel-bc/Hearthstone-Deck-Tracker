@@ -24,6 +24,7 @@ namespace HearthWatcher.Test
 		public void Cleanup()
 		{
 			_watcher?.Stop();
+			PollingWatcher.SetThrottled(false);
 			PollingWatcher.SetEventContext(null);
 		}
 
@@ -130,6 +131,55 @@ namespace HearthWatcher.Test
 
 			var snapshot = values.Take(6).ToList();
 			CollectionAssert.AreEqual(snapshot.OrderBy(x => x).ToList(), snapshot);
+		}
+
+		[TestMethod]
+		public async Task ThrottledWatcherPollsSlowlyAndWakesWhenUnthrottled()
+		{
+			PollingWatcher.SetThrottled(true);
+			_watcher = new TestWatcher(w => false);
+			_watcher.Run();
+
+			// first tick lands after one throttled delay, the watcher then starts the next one
+			await WaitUntil(() => _watcher.Ticks >= 1);
+			await Task.Delay(50);
+			var throttledTicks = _watcher.Ticks;
+			// a 1ms watcher would have ticked dozens of times by now if it weren't throttled
+			Assert.IsTrue(throttledTicks <= 2, $"ticks while throttled: {throttledTicks}");
+
+			// un-throttling cancels the ~200ms still left of the current wait
+			PollingWatcher.SetThrottled(false);
+			await WaitUntil(() => _watcher.Ticks > throttledTicks, timeoutMs: 100);
+		}
+
+		[TestMethod]
+		public async Task RaisingEventsKeepsWatcherAtBaseRate()
+		{
+			// 10ms base, 30ms idle. Raising an event every tick must keep it at the base rate
+			// well past the idle threshold.
+			var raising = new TestWatcher(w =>
+			{
+				w.RaiseEvent(w.Ticks);
+				return false;
+			}, delay: 10);
+			var silent = new TestWatcher(w => false, delay: 10);
+			_watcher = raising;
+			try
+			{
+				raising.Run();
+				silent.Run();
+				await Task.Delay(PollingWatcher.IdleAfterMs + 100);
+				var raisingStart = raising.Ticks;
+				var silentStart = silent.Ticks;
+				await Task.Delay(1000);
+				var raisingTicks = raising.Ticks - raisingStart;
+				var silentTicks = silent.Ticks - silentStart;
+				Assert.IsTrue(raisingTicks > silentTicks * 1.5, $"raising: {raisingTicks}, silent: {silentTicks}");
+			}
+			finally
+			{
+				silent.Stop();
+			}
 		}
 
 		private static async Task WaitUntil(Func<bool> condition, int timeoutMs = 5000)

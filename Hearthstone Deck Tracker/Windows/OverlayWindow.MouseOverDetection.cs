@@ -415,6 +415,12 @@ namespace Hearthstone_Deck_Tracker.Windows
 			return cardWidth;
 		}
 
+		// ~100ms at 60Hz: re-check for elements moving under a still cursor
+		private const int HoverStillCursorRecheckTicks = 6;
+		private Point? _lastHoverCursorPos;
+		private bool _lastHoverBehind;
+		private int _hoverTicksSinceFullCheck;
+
 		private bool _runInteractivityUpdates;
 		private async void StartInteractivityUpdates()
 		{
@@ -475,6 +481,16 @@ namespace Hearthstone_Deck_Tracker.Windows
 			var cursorPos = GetCursorPos();
 			if(cursorPos == null)
 				return;
+
+			// Hit-testing every overlay element is the expensive part. While the cursor is still and the
+			// z-state is unchanged, only re-run it every few ticks to catch elements moving under it.
+			var behindNow = _overlayZState == OverlayZState.Behind;
+			if(cursorPos == _lastHoverCursorPos && behindNow == _lastHoverBehind
+			   && ++_hoverTicksSinceFullCheck < HoverStillCursorRecheckTicks)
+				return;
+			_lastHoverCursorPos = cursorPos;
+			_lastHoverBehind = behindNow;
+			_hoverTicksSinceFullCheck = 0;
 
 			if(_scaleCache.IsInvalid)
 				_scaleCache.Clear();

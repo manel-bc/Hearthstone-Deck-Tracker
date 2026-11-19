@@ -45,7 +45,11 @@ namespace Hearthstone_Deck_Tracker
 {
 	public static class Core
 	{
-		private const int UpdateDelay = 16;
+		// Main loop rates. The overlay position is driven by a window hook, so the loop only needs to
+		// react to focus/visibility changes and leaderboard hovers; 30Hz is plenty for that.
+		private const int UpdateDelay = 33;
+		private const int BackgroundUpdateDelay = 100;
+		private const int NotRunningUpdateDelay = 500;
 		private static TrayIcon? _trayIcon;
 		private static OverlayWindow? _overlay;
 		private static int _updateRequestsPlayer;
@@ -115,7 +119,9 @@ namespace Hearthstone_Deck_Tracker
 				// more info: https://stackoverflow.com/questions/7737372/wpf-crash-with-intel-hd-video-cards and https://stackoverflow.com/questions/4951058/software-rendering-mode-wpf/4951250#4951250
 				var renderingTier = RenderCapability.Tier >> 16;
 				// force Intel Arc gpus to use software rendering
-				var isIntelGpu = Helper.IsIntelGpu();
+				// AllowHardwareAccelerationOnIntel lets users with a stable driver opt back in: software
+				// rendering a full-screen transparent overlay is very CPU heavy on low-power laptop CPUs.
+				var isIntelGpu = !Config.Instance.AllowHardwareAccelerationOnIntel && Helper.IsIntelGpu();
 				forceSoftwareRendering = renderingTier == 0 || isIntelGpu;
 			}
 
@@ -470,6 +476,7 @@ namespace Hearthstone_Deck_Tracker
 			var hsForegroundChanged = false;
 			while(_updateOverlay)
 			{
+				var nextDelay = NotRunningUpdateDelay;
 #if(INSTALLED)
 				if(BackgroundMode.CheckForUpdates)
 					Updater.CheckForUpdates();
@@ -542,7 +549,10 @@ namespace Hearthstone_Deck_Tracker
 
 					Helper.GameWindowState = User32.GetHearthstoneWindowState();
 					Windows.CapturableOverlay?.Update();
-					if(User32.IsHearthstoneInForeground() && Helper.GameWindowState != WindowState.Minimized)
+					var hsActive = User32.IsHearthstoneInForeground() && Helper.GameWindowState != WindowState.Minimized;
+					nextDelay = hsActive ? UpdateDelay : BackgroundUpdateDelay;
+					PollingWatcher.SetThrottled(!hsActive && Config.Instance.ThrottleWatchersInBackground);
+					if(hsActive)
 					{
 						if(hsForegroundChanged)
 						{
@@ -579,6 +589,7 @@ namespace Hearthstone_Deck_Tracker
 					SceneHandler.Reset();
 					Overlay.UpdateVisibilities();
 					Watchers.Stop();
+					PollingWatcher.SetThrottled(false);
 					if(Windows.CapturableOverlay != null)
 					{
 						Windows.CapturableOverlay.UpdateContentVisibility();
@@ -623,7 +634,7 @@ namespace Hearthstone_Deck_Tracker
 						MainWindow.Close();
 				}
 
-				await Task.Delay(UpdateDelay);
+				await Task.Delay(nextDelay);
 			}
 			IsShuttingDown = true;
 		}

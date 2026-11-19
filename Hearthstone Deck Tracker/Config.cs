@@ -51,6 +51,11 @@ namespace Hearthstone_Deck_Tracker
 		[DefaultValue(true)]
 		public bool? UseHardwareAcceleration = true;
 
+		// Intel GPUs are forced to software rendering by default (OOM crashes on some drivers).
+		// Setting this to true skips that check; UseHardwareAcceleration=false still wins.
+		[DefaultValue(false)]
+		public bool AllowHardwareAccelerationOnIntel = false;
+
 		[DefaultValue("Blue")]
 		public string AccentName = "Blue";
 
@@ -395,6 +400,12 @@ namespace Hearthstone_Deck_Tracker
 
 		[DefaultValue(true)]
 		public bool HideInBackground = true;
+
+		// Poll Hearthstone's memory at most every PollingWatcher.ThrottledDelay ms while the game is in
+		// the background or minimized. Turn off if you rely on the overlay updating instantly while
+		// Hearthstone is not focused.
+		[DefaultValue(true)]
+		public bool ThrottleWatchersInBackground = true;
 
 		[DefaultValue(true)]
 		public bool HideMenuOverlayInBackground = true;
