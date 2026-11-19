@@ -1,9 +1,7 @@
 name: Main
 
 on:
-  push:
-    branches:
-      - '**'
+  workflow_dispatch:
 
 defaults:
   run:
